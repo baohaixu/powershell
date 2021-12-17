@@ -1,0 +1,314 @@
+[void] [System.Reflection.Assembly]::LoadWithPartialName("System.Drawing")
+[void] [System.Reflection.Assembly]::LoadWithPartialName("System.Windows.Forms")
+$global:font1 = New-Object System.Drawing.Font("Lucida Console", 14, [System.Drawing.FontStyle]::Bold)
+$global:font2 = New-Object System.Drawing.Font("Lucida Console", 12, [System.Drawing.FontStyle]::Regular)
+$global:totalWidth = 2000
+$global:totalHeight = 1000
+$global:padding = 8
+[void]$global:selectedDirectory
+[void]$global:directoryPanel
+
+function CreateFileDirectoryButton {
+  param (
+    $i,
+    $objForm,
+    $labelOrdner,
+    $textBoxFilter,
+    $type,
+    $file,
+    $left,
+    $buttonLoc,
+    $buttonWidth,
+    $buttonHeight,
+    $font2
+  )
+  $datei = New-Object System.Windows.Forms.Button
+  $datei.Location = New-Object System.Drawing.Point($left, $buttonLoc)
+  $datei.Size = New-Object System.Drawing.Size($buttonWidth, $buttonHeight)
+  if($i) {
+    $datei.Text = "$i $file"
+  } else {
+    $datei.Text = $file.Name
+  }
+  $datei.Font = $font2
+  if ($type.Equals("file")) {
+    $datei.Add_Click({
+        Invoke-Item $file.FullName
+      }.GetNewClosure())
+  }
+  else {
+    $datei.Add_Click({
+        $path = $file.FullName
+        $objForm.Controls.Remove($global:directoryPanel);
+        $objForm.Refresh()
+        $global:selectedDirectory = $path
+        $labelOrdner.Text = "&Ordner: $global:selectedDirectory"
+        $filter = $textBoxFilter.Text
+        OrdnerUebersichtWrapper $objForm $labelOrdner $textBoxFilter $global:selectedDirectory $filter
+        $objForm.Text = "Ordnerstruktur: (" + $global:selectedDirectory + ")"
+      }.GetNewClosure())
+  }
+  $datei.Cursor = [System.Windows.Forms.Cursors]::Hand
+  return $datei
+}
+
+function CreateFilesDirectoiresButtons {
+  param (
+  	$i,
+    $objForm,
+    $labelOrdner,
+    $textBoxFilter,
+    $objGroupBox,
+    $files, $directories,
+    $buttonLeft, $buttonLoc, $buttonWidth, $buttonHeight, $font2, $padding
+  )
+  foreach ($file in $files) {
+    $i += 1
+    $datei = CreateFileDirectoryButton $i $objForm $labelOrdner $textBoxFilter "file" $file $buttonLeft $buttonLoc  $buttonWidth $buttonHeight $font2
+    $objToolTip = New-Object System.Windows.Forms.ToolTip
+    $objToolTip.AutoPopDelay = 5000;
+    $objToolTip.InitialDelay = 1000;
+    $objToolTip.ReshowDelay = 500;
+    $objToolTip.ShowAlways = $true;
+    $objToolTip.SetToolTip($datei, "Datei")
+    $objGroupBox.Controls.Add($datei)
+    $buttonLoc += $buttonHeight + $padding
+  }
+  foreach ($directory in $directories) {
+    $i += 1
+    $ordner = CreateFileDirectoryButton $i $objForm $labelOrdner $textBoxFilter "directory" $directory $buttonLeft $buttonLoc  $buttonWidth $buttonHeight $font2
+    $objToolTip = New-Object System.Windows.Forms.ToolTip
+    $objToolTip.AutoPopDelay = 5000;
+    $objToolTip.InitialDelay = 1000;
+    $objToolTip.ReshowDelay = 500;
+    $objToolTip.ShowAlways = $true;
+    $objToolTip.SetToolTip($ordner, "Ordner")
+    $objGroupBox.Controls.Add($ordner)
+    $buttonLoc += $buttonHeight + $padding
+  }
+}
+
+function CreateFolderGroupBox {
+  param (
+    $i, $count, $folder, $left, $loc, $width, $height, $font1
+  )
+  $objGroupBox = New-Object System.Windows.Forms.GroupBox
+  $objGroupBox.Location = New-Object System.Drawing.Point($left, $loc)
+  $objGroupBox.Size = New-Object System.Drawing.Size($width, $height)
+  if ($folder) {
+    $objGroupBox.text = "$folder($i/$count)"
+  }
+  $objGroupBox.Font = $font1
+  $objToolTip = New-Object System.Windows.Forms.ToolTip
+  $objToolTip.AutoPopDelay = 5000;
+  $objToolTip.InitialDelay = 1000;
+  $objToolTip.ReshowDelay = 500;
+  $objToolTip.ShowAlways = $true;
+  $objToolTip.SetToolTip($objGroupBox, "$i von $count Ordner")
+  return $objGroupBox
+}
+
+function OrdnerUebersicht {
+  param (
+    $objForm,
+    $labelOrdner,
+    $textBoxFilter,
+    $ordner,
+    $filter,
+    $left, $loc, $width, $height, $font1,
+    $buttonLeft, $buttonLoc, $buttonWidth, $buttonHeight, $font2,
+    $padding
+  )
+  $panelWidth = $width
+  $panelHeight = $height
+  $global:directoryPanel = New-Object System.Windows.Forms.Panel
+  $global:directoryPanel.Location = New-Object System.Drawing.Point($left, $loc)
+  $global:directoryPanel.Size = New-Object System.Drawing.Size($panelWidth, $panelHeight)
+  $filter = "*" + $filter + "*"
+  $files1 = Get-ChildItem -File $ordner -Filter $filter
+  $width = $panelWidth / 5
+  if ($files1.Count -gt 0) {
+    $objGroupBox = CreateFolderGroupBox 0 0 $null 0 0 $width $height $font1
+    $global:directoryPanel.Controls.Add($objGroupBox)
+    CreateFilesDirectoiresButtons 0 $objForm $labelOrdner $textBoxFilter $objGroupBox $files1 $null $buttonLeft $buttonLoc  $buttonWidth $buttonHeight $font2 $padding
+    $left += $width
+  }
+
+  $folders = Get-ChildItem -Directory $ordner
+  $count = $folders.Count
+  $i = 0
+  foreach ($folder in $folders) {
+    $files = Get-ChildItem -File $folder.FullName -Filter $filter
+    $directories = @(Get-ChildItem -Directory $folder.FullName -Filter $filter)
+    $directories += @(Get-ChildItem -Directory $folder.FullName | Where-Object { Get-ChildItem -File -Recurse $_.FullName -Filter $filter })
+
+    if (($files.Count -eq 0) -and ($directories.Count -eq 0)) { continue }
+    $i += 1
+    $objGroupBox = CreateFolderGroupBox $i $count $folder $left 0 $width $height $font1
+    if ($i -gt 3) {
+      $objGroupBox.Visible = $false
+    }
+    $global:directoryPanel.Controls.Add($objGroupBox)
+    CreateFilesDirectoiresButtons $null $objForm $labelOrdner $textBoxFilter $objGroupBox $files $directories $buttonLeft $buttonLoc  $buttonWidth $buttonHeight $font2 $padding
+    $left += $width
+  }
+  $objForm.Controls.Add($global:directoryPanel);
+}
+
+function global:OrdnerUebersichtWrapper {
+  param (
+    $objForm, $labelOrdner, $textBoxFilter, $ordner, $filter
+  )
+  $loc = 300
+  $left = 30
+  $width = $totalWidth * 4.5 / 5
+  $height = $totalHeight * 2.8 / 5
+  $buttonLeft = 15
+  $buttonLoc = 30
+  $buttonHeight = 40
+  $buttonWidth = 300
+
+  OrdnerUebersicht $objForm $labelOrdner $textBoxFilter $ordner  $filter  $left $loc $width $height $font1  $buttonLeft $buttonLoc  $buttonWidth $buttonHeight $font2  $padding
+}
+
+function CreateDirectoryButton {
+  param (
+    $objForm, $labelOrdner, $textBoxFilter, $ComboBoxOrdner, $left, $loc, $text, $path, $font2
+  )
+  $directory = New-Object System.Windows.Forms.Button
+  $directory.Location = New-Object System.Drawing.Point($left, $loc)
+  $directory.Size = New-Object System.Drawing.Size(150, 60)
+  $directory.Text = $text
+  $directory.Font = $font2
+  $directory.BackColor = "lightyellow"
+  $directory.Add_Click({
+      $objForm.Controls.Remove($global:directoryPanel);
+      $objForm.Refresh()
+      $global:selectedDirectory = $path
+      $labelOrdner.Text = "&Ordner: $global:selectedDirectory"
+      $filter = $textBoxFilter.Text
+      OrdnerUebersichtWrapper $objForm $labelOrdner $textBoxFilter $global:selectedDirectory $filter
+      $objForm.Text = "Ordnerstruktur: (" + $global:selectedDirectory + ")"
+    }.GetNewClosure())
+  $directory.Cursor = [System.Windows.Forms.Cursors]::Hand
+  return $directory
+}
+
+function DirectoryStringParent {
+  param (
+    $directory
+  )
+  $directoryArray = $directory.Split("\")
+  $count = $directoryArray.Count
+  $parent = $directoryArray[0]
+  for ($i = 1; $i -lt $count - 1; $i++) {
+    $part = $directoryArray[$i]
+    $parent = "$parent\$part"
+  }
+  return $parent
+}
+
+
+$objForm = New-Object System.Windows.Forms.Form
+$objForm.Backcolor = "white"
+$objForm.StartPosition = "CenterScreen"
+$objForm.Size = New-Object System.Drawing.Size($totalWidth, $totalHeight)
+$objForm.Text = "Ordnerstruktur:"
+
+
+$loc = 200
+$left = 30
+$labelOrdner = New-Object System.Windows.Forms.Label
+$labelOrdner.Location = New-Object System.Drawing.Point($left, $loc)
+$labelOrdner.Size = New-Object System.Drawing.Size(1000, 50)
+$labelOrdner.Text = 'Ordner:'
+$labelOrdner.Font = $font1
+$labelOrdner.BackColor = "white"
+$labelOrdner.BorderStyle = "FixedSingle"
+$labelOrdner.TextAlign = "MiddleLeft"
+$labelOrdner.Add_Click({
+    $path = DirectoryStringParent $global:selectedDirectory
+    $objForm.Controls.Remove($global:directoryPanel);
+    $objForm.Refresh()
+    $global:selectedDirectory = $path
+    $labelOrdner.Text = "&Ordner: $global:selectedDirectory"
+    $filter = $textBoxFilter.Text
+    OrdnerUebersichtWrapper $objForm $labelOrdner $textBoxFilter $global:selectedDirectory $filter
+    $objForm.Text = "Ordnerstruktur: (" + $global:selectedDirectory + ")"
+  })
+$objToolTip = New-Object System.Windows.Forms.ToolTip
+$objToolTip.AutoPopDelay = 5000;
+$objToolTip.InitialDelay = 1000;
+$objToolTip.ReshowDelay = 500;
+$objToolTip.ShowAlways = $true;
+$objToolTip.SetToolTip($labelOrdner, "drauf anklicken, um einen Schritt zurückzugehen")
+$objForm.Controls.Add($labelOrdner)
+$contextMenuStrip1 = New-Object System.Windows.Forms.ContextMenuStrip
+[void]$contextMenuStrip1.Items.Add("Ordner Öffnen")
+[void]$contextMenuStrip1.Items.Add("Item 2")
+$contextMenuStrip1.Add_ItemClicked({
+    param($obj, $e)
+    if ($e.ClickedItem.Text.Equals("Ordner Öffnen")) {
+      Invoke-Item $global:selectedDirectory
+    }
+  })
+$labelOrdner.ContextMenuStrip = $contextMenuStrip1
+
+
+$left += 1100
+$labelWidth = 220
+$label = New-Object System.Windows.Forms.Label
+$label.Location = New-Object System.Drawing.Point($left, $loc)
+$label.Size = New-Object System.Drawing.Size($labelWidth, 50)
+$label.Text = 'Datei-/Ordner&filter:'
+$label.Font = $font2
+$label.TextAlign = "MiddleLeft"
+$objForm.Controls.Add($label)
+$left += $labelWidth
+$loc += 10
+$textBoxFilter = New-Object System.Windows.Forms.TextBox
+$textBoxFilter.Location = New-Object System.Drawing.Point($left, $loc)
+$textBoxFilter.Size = New-Object System.Drawing.Size(200, 50)
+$textBoxFilter.TextAlign = "Left"
+$textBoxFilter.Font = $font1
+$textBoxFilter.TextAlign = "Left"
+$textBoxFilter.Add_TextChanged({
+    $objForm.Controls.Remove($global:directoryPanel);
+    $objForm.Refresh()
+    $filter = $textBoxFilter.Text
+    OrdnerUebersichtWrapper $objForm $labelOrdner $textBoxFilter $global:selectedDirectory $filter
+  })
+$objForm.Controls.Add($textBoxFilter)
+
+
+$left = 30
+$loc = 50
+$lines = Get-Content .\info.txt
+$i = 0
+foreach ($line in $lines) {
+  $line = $line.Trim();
+  if ($line.Length -eq 0) {
+    break
+  }
+  $i += 1
+  $lineArr = $line.Split("=")
+  $text = $lineArr[0]
+  $text = "&$i $text"
+  $path = $lineArr[1]
+  $directory = CreateDirectoryButton $objForm $labelOrdner $textBoxFilter $ComboBoxOrdner $left $loc $text $path $font2
+  $objForm.Controls.Add($directory)
+  $left += 155
+}
+
+$CancelButton = New-Object System.Windows.Forms.Button
+$CancelButton.Location = New-Object System.Drawing.Point(1700, 900)
+$CancelButton.Size = New-Object System.Drawing.Size(175, 33)
+$CancelButton.Text = "&Schließen"
+$CancelButton.Font = $font2
+$CancelButton.BackColor = "red"
+$CancelButton.Name = "Abbrechen"
+$CancelButton.DialogResult = "Cancel"
+$CancelButton.Add_Click({ $objForm.Close() })
+$objForm.Controls.Add($CancelButton)
+
+[void] $objForm.ShowDialog()
